@@ -10,6 +10,8 @@ namespace WarehouseAPI.DTOs.MaterialDTOs
         public required string Name { get; set; }
 
         public int CategoryId { get; set; }
+        public string CategoryName => CategoryMapping.GetCategoryName(CategoryId);
+
         public int UnitId { get; set; }
         public int SupplierId { get; set; }
 

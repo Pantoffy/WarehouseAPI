@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using WarehouseAPI.Entities;
 using WarehouseAPI.Models;
 
 namespace WarehouseAPI.Data;
@@ -14,6 +15,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ExportReceiptDetail> ExportReceiptDetail => Set<ExportReceiptDetail>();
     public DbSet<PurchaseOrder> PurchaseOrder => Set<PurchaseOrder>();
     public DbSet<PurchaseOrderDetail> PurchaseOrderDetail => Set<PurchaseOrderDetail>();
+    public DbSet<StockCheck> StockCheck => Set<StockCheck>();
+    public DbSet<StockCheckDetail> StockCheckDetail => Set<StockCheckDetail>();
+    public DbSet<StockCheckTeam> StockCheckTeam => Set<StockCheckTeam>();
+
+    public DbSet<User> AppUser {  get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -60,5 +66,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .Property(pod => pod.Amount)
             .HasComputedColumnSql("[Quantity] * [UnitPrice]")
             .ValueGeneratedOnAddOrUpdate();
+
+        // Configure foreign key for StockCheckDetail.WarehouseId
+        modelBuilder.Entity<StockCheckDetail>()
+            .HasOne(scd => scd.Warehouse)
+            .WithMany()
+            .HasForeignKey(scd => scd.WarehouseId)
+            .HasConstraintName("FK_SCD_Warehouse");
+
+        // Configure foreign key for StockCheckTeam.StockCheckId
+        modelBuilder.Entity<StockCheckTeam>()
+            .HasOne(sct => sct.StockCheck)
+            .WithMany(sc => sc.Teams)
+            .HasForeignKey(sct => sct.StockCheckId)
+            .HasConstraintName("FK_SCT_Check");
     }
 }

@@ -1,5 +1,8 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
+using System.Text;
 using WarehouseAPI.Data;
 using WarehouseAPI.Repository;
 using WarehouseAPI.Services.Supplier;
@@ -9,12 +12,11 @@ using WarehouseAPI.Services.Inventory;
 using WarehouseAPI.Services.ImportReceipt;
 using WarehouseAPI.Services.ExportReceipt;
 using WarehouseAPI.Services.PurchaseOrder;
+using WarehouseAPI.Services.Auth;
+using WarehouseAPI.Services.Unit;
+using WarehouseAPI.Services.Stock;
 
 var builder = WebApplication.CreateBuilder(args);
-
-// =======================
-// SERVICES
-// =======================
 
 builder.Services.AddControllers();
 
@@ -31,19 +33,19 @@ builder.Services.AddCors(options =>
                 "https://localhost:5173",
                 "http://localhost:3000",
                 "https://localhost:3000")
-            .AllowAnyHeader()
-            .AllowAnyMethod();
+            .WithHeaders("Content-Type", "Authorization", "ngrok-skip-browser-warning")
+            .WithMethods("POST", "PUT", "DELETE");
     });
 });
 
 // DbContext
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection")
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        sqlOptions => sqlOptions.EnableRetryOnFailure()
     )
 );
 
-// Dependency Injection
 builder.Services.AddScoped<ISupplierService, SupplierService>();
 builder.Services.AddScoped<IMaterialService, MaterialService>();
 builder.Services.AddScoped<IWarehouseService, WarehouseService>();
@@ -51,13 +53,36 @@ builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IImportReceiptService, ImportReceiptService>();
 builder.Services.AddScoped<IExportReceiptService, ExportReceiptService>();
 builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
+builder.Services.AddScoped<IUnitService, UnitService>();
 builder.Services.AddScoped<IUOW, UOW>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IInventoryUpdateService, InventoryUpdateService>();
+
+// Stock Services
+builder.Services.AddScoped<StockCheckRepository>();
+builder.Services.AddScoped<StockCheckDetailRepository>();
+builder.Services.AddScoped<StockCheckTeamRepository>();
+builder.Services.AddScoped<IStockService, StockService>();
+builder.Services.AddScoped<IStockDetailService, StockDetailService>();
+builder.Services.AddScoped<IStockTeamService, StockTeamService>();
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = builder.Configuration["AppSettings:Issuer"],
+            ValidateAudience = true,
+            ValidAudience = builder.Configuration["AppSettings:Audience"],
+            ValidateLifetime = true,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["AppSettings:Token"]!)),
+            ValidateIssuerSigningKey = true
+        };
+    });
 
 var app = builder.Build();
-
-// =======================
-// MIDDLEWARE PIPELINE
-// =======================
 
 if (app.Environment.IsDevelopment())
 {
@@ -65,9 +90,9 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
-app.UseRouting();                 // ✅ BẮT BUỘC – FIX CORS DELETE
+app.UseRouting();           
 
-app.UseCors("AllowFrontend");     // ✅ SAU routing
+app.UseCors("AllowFrontend");   
 
 app.UseHttpsRedirection();
 

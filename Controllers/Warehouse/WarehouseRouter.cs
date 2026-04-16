@@ -2,10 +2,11 @@ namespace WarehouseAPI.Controllers.Warehouse
 {
     public static class WarehouseRouter
     {
-        public const string GetAllWarehouses = "GetAllWarehouses";
-        public const string GetWarehouseById = "GetWarehouseById";
-        public const string AddWarehouse = "AddWarehouse";
-        public const string UpdateWarehouse = "UpdateWarehouse";
-        public const string DeleteWarehouse = "DeleteWarehouse";
+        public const string GetAllWarehouses = "List";
+        public const string GetWarehouseById = "Get";
+        public const string AddWarehouse = "Add";
+        public const string UpdateWarehouse = "Update";
+        public const string DeleteWarehouse = "Delete";
+        public const string GetWarehouseTypes = "Types";
     }
 }

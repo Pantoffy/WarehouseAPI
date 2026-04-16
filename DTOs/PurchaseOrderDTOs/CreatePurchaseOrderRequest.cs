@@ -1,3 +1,5 @@
+using WarehouseAPI.Models;
+
 namespace WarehouseAPI.DTOs.PurchaseOrderDTOs
 {
     public class CreatePurchaseOrderRequest
@@ -18,5 +20,6 @@ namespace WarehouseAPI.DTOs.PurchaseOrderDTOs
 
         public string? Note { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.Now;
+        public PurchaseOrderDetail[]? PurchaseOrderDetails { get; set; }    
     }
 }

@@ -1,12 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
 using WarehouseAPI.DTOs.ExportReceiptDTOs;
 using WarehouseAPI.Services.ExportReceipt;
+using WarehouseAPI.Services.Inventory;
 
 namespace WarehouseAPI.Controllers.ExportReceipt
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ExportReceiptController(IExportReceiptService service) : ControllerBase
+    public class ExportReceiptController(IExportReceiptService service, IInventoryUpdateService inventoryUpdateService) : ControllerBase
     {
         //hien danh sach phieu xuat
         [Route(ExportReceiptRouter.GetAllExportReceipts), HttpGet]
@@ -42,7 +43,24 @@ namespace WarehouseAPI.Controllers.ExportReceipt
             try
             {
                 var updated = await service.UpdateExportReceiptByIdAsync(id, exportReceipt);
-                return updated ? Ok("Cập nhật thành công") : NotFound("Không tìm thấy phiếu xuất với Id đã cho.");
+                if (!updated)
+                    return NotFound("Không tìm thấy phiếu xuất với Id đã cho.");
+
+                // If status changed to "Approved", update inventory (trừ hàng)
+                if (exportReceipt.Status?.Equals("Approved", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    await inventoryUpdateService.UpdateInventoryOnExportApprovedAsync(id);
+                }
+
+                // If status changed to "Cancelled", revert inventory (hoàn hàng)
+                // Hỗ trợ: Cancelled, Cancel, Hủy, Đã hủy, Bị hủy
+                var cancelledStatuses = new[] { "Cancelled", "Cancel", "Hủy", "Đã hủy", "Bị hủy" };
+                if (cancelledStatuses.Any(s => exportReceipt.Status?.Equals(s, StringComparison.OrdinalIgnoreCase) == true))
+                {
+                    await inventoryUpdateService.UpdateInventoryOnExportCancelledAsync(id);
+                }
+
+                return Ok("Cập nhật thành công");
             }
             catch (InvalidOperationException ex)
             {

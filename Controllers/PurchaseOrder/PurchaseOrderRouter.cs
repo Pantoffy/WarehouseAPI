@@ -2,10 +2,10 @@ namespace WarehouseAPI.Controllers.PurchaseOrder
 {
     public static class PurchaseOrderRouter
     {
-        public const string GetAllPurchaseOrders = "GetAllPurchaseOrders";
-        public const string GetPurchaseOrderById = "GetPurchaseOrderById";
-        public const string AddPurchaseOrder = "AddPurchaseOrder";
-        public const string UpdatePurchaseOrder = "UpdatePurchaseOrder";
-        public const string DeletePurchaseOrder = "DeletePurchaseOrder";
+        public const string GetAllPurchaseOrders = "List";
+        public const string GetPurchaseOrderById = "Get";
+        public const string AddPurchaseOrder = "Add";
+        public const string UpdatePurchaseOrder = "Update";
+        public const string DeletePurchaseOrder = "Delete";
     }
 }

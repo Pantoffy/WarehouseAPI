@@ -6,6 +6,7 @@ using WarehouseAPI.Services.Supplier;
 
 namespace WarehouseAPI.Controllers.Supplier
 {
+    [Route("api/[controller]")]
     [ApiController]
     public class SupplierController(ISupplierService service) : ControllerBase
     {
@@ -27,14 +28,14 @@ namespace WarehouseAPI.Controllers.Supplier
             return CreatedAtAction(nameof(GetSupplier), new { id = createdSupplier.Id }, createdSupplier); 
         }
         //cap nhat thong tin nha cung cap
-        [Route(SupplierRouter.UpdateSupplier),HttpPut/*("{id}")*/]
+        [Route(SupplierRouter.UpdateSupplier),HttpPut("{id}")]
         public async Task<ActionResult> UpdateSupplier(int id, UpdateSupplierRequest supplier)
         {
             var updated = await service.UpdateSupplierByIdAsync(id, supplier);
             return updated ? Ok("Cập nhật thành công") : NotFound("Không tìm thấy nhà cung cấp với Id đã cho.");
         }
         //xoa nha cung cap
-        [Route(SupplierRouter.DeleteSupplier),HttpDelete/*("{id}")*/]
+        [Route(SupplierRouter.DeleteSupplier),HttpDelete("{id}")]
         public async Task<ActionResult> DeleteSupplier(int id)
         {
             var deleted = await service.DeleteSupplierByIdAsync(id);

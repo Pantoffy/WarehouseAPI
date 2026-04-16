@@ -13,6 +13,7 @@ namespace WarehouseAPI.Repository
         public IImportReceiptRepository ImportReceiptRepository { get; private set; }
         public IExportReceiptRepository ExportReceiptRepository { get; private set; }
         public IPurchaseOrderRepository PurchaseOrderRepository { get; private set; }
+        public IUnitRepository UnitRepository { get; private set; }
 
         public UOW(AppDbContext context)
         {
@@ -24,6 +25,7 @@ namespace WarehouseAPI.Repository
             ImportReceiptRepository = new ImportReceiptRepository(_context);
             ExportReceiptRepository = new ExportReceiptRepository(_context);
             PurchaseOrderRepository = new PurchaseOrderRepository(_context);
+            UnitRepository = new UnitRepository();
         }
     }
 }
@@ -36,4 +38,5 @@ namespace WarehouseAPI.Repository
         IImportReceiptRepository ImportReceiptRepository { get; }
         IExportReceiptRepository ExportReceiptRepository { get; }
         IPurchaseOrderRepository PurchaseOrderRepository { get; }
+        IUnitRepository UnitRepository { get; }
     }

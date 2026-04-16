@@ -24,6 +24,6 @@ namespace WarehouseAPI.DTOs.PurchaseOrderDTOs
         public DateTime CreatedAt { get; set; }
 
         public Supplier? Supplier { get; set; }
-        public ICollection<PurchaseOrderDetail>? PurchaseOrderDetails { get; set; }
+        public ICollection<PurchaseOrderDetailResponse>? PurchaseOrderDetails { get; set; }
     }
 }

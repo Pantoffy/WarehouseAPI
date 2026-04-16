@@ -28,6 +28,6 @@ namespace WarehouseAPI.DTOs.ImportReceiptDTOs
 
         public Supplier? Supplier { get; set; }
         public Warehouse? Warehouse { get; set; }
-        public ICollection<ImportReceiptDetail>? ImportReceiptDetails { get; set; }
+        public List<ImportReceiptDetailResponse>? ImportReceiptDetails { get; set; }
     }
 }

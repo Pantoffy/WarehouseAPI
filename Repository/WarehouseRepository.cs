@@ -57,6 +57,34 @@ namespace WarehouseAPI.Repository
             if (warehouse is null)
                 return false;
 
+            // Delete related records first to avoid FK constraint violation
+            var inventories = await context.Inventory.Where(i => i.WarehouseId == id).ToListAsync();
+            context.Inventory.RemoveRange(inventories);
+
+            var importReceipts = await context.ImportReceipt.Where(ir => ir.WarehouseId == id).ToListAsync();
+            foreach (var receipt in importReceipts)
+            {
+                var details = await context.ImportReceiptDetail.Where(d => d.ImportReceiptId == receipt.Id).ToListAsync();
+                context.ImportReceiptDetail.RemoveRange(details);
+            }
+            context.ImportReceipt.RemoveRange(importReceipts);
+
+            var exportReceipts = await context.ExportReceipt.Where(er => er.WarehouseId == id).ToListAsync();
+            foreach (var receipt in exportReceipts)
+            {
+                var details = await context.ExportReceiptDetail.Where(d => d.ExportReceiptId == receipt.Id).ToListAsync();
+                context.ExportReceiptDetail.RemoveRange(details);
+            }
+            context.ExportReceipt.RemoveRange(exportReceipts);
+
+            var stockChecks = await context.StockCheck.Where(sc => sc.WarehouseId == id).ToListAsync();
+            foreach (var stockCheck in stockChecks)
+            {
+                var stockCheckDetails = await context.StockCheckDetail.Where(d => d.StockCheckId == stockCheck.Id).ToListAsync();
+                context.StockCheckDetail.RemoveRange(stockCheckDetails);
+            }
+            context.StockCheck.RemoveRange(stockChecks);
+
             context.Warehouse.Remove(warehouse);
             await context.SaveChangesAsync();
             return true;
@@ -116,7 +144,6 @@ namespace WarehouseAPI.Repository
             existingWarehouse.ManagerPhone = warehouse.ManagerPhone;
             existingWarehouse.Status = warehouse.Status;
             existingWarehouse.Note = warehouse.Note;
-            existingWarehouse.CreatedTime = warehouse.CreatedTime;
 
             await context.SaveChangesAsync();
             return true;

@@ -15,7 +15,7 @@ namespace WarehouseAPI.Models
         public string? Note { get; set; }
 
         // Navigation properties
-        public ImportReceipt? ImportReceipt { get; set; }
+        //public ImportReceipt? ImportReceipt { get; set; }
         public Material? Material { get; set; }
     }
 }

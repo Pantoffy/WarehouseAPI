@@ -21,7 +21,7 @@ namespace WarehouseAPI.Repository
             // Validate SupplierId exists
             var supplierExists = await context.Suppliers.AnyAsync(s => s.Id == material.SupplierId);
             if (!supplierExists)
-                throw new InvalidOperationException($"Supplier with ID {material.SupplierId} does not exist.");
+                throw new InvalidOperationException($"Nhà cung cấp có ID {material.SupplierId} không tồn tại.");
 
             var newMaterial = new Material
             {
@@ -59,6 +59,16 @@ namespace WarehouseAPI.Repository
             var material = await context.Materials.FindAsync(id);
             if (material is null)
                 return false;
+
+            // Check and delete related ImportReceiptDetails
+            var importReceiptDetails = await context.ImportReceiptDetail
+                .Where(ird => ird.MaterialId == id)
+                .ToListAsync();
+
+            if (importReceiptDetails.Any())
+            {
+                context.ImportReceiptDetail.RemoveRange(importReceiptDetails);
+            }
 
             context.Materials.Remove(material);
             await context.SaveChangesAsync();

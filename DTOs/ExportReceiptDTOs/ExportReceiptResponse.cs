@@ -26,6 +26,6 @@ namespace WarehouseAPI.DTOs.ExportReceiptDTOs
         public DateTime CreatedAt { get; set; }
 
         public Warehouse? Warehouse { get; set; }
-        public ICollection<ExportReceiptDetail>? ExportReceiptDetails { get; set; }
+        public ICollection<ExportReceiptDetailResponse>? ExportReceiptDetails { get; set; }
     }
 }

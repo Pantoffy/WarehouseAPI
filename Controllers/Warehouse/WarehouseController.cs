@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using WarehouseAPI.DTOs;
 using WarehouseAPI.DTOs.WarehouseDTOs;
 using WarehouseAPI.Services.Warehouse;
 
@@ -43,5 +44,10 @@ namespace WarehouseAPI.Controllers.Warehouse
             var deleted = await service.DeleteWarehouseByIdAsync(id);
             return deleted ? Ok("Xóa kho thành công") : NotFound("Không tìm thấy kho với Id đã cho.");
         }
+
+        //lay danh sach loai kho
+        [Route(WarehouseRouter.GetWarehouseTypes), HttpGet]
+        public ActionResult<Dictionary<int, string>> GetWarehouseTypes()
+            => Ok(WarehouseTypeMapping.GetAllWarehouseTypes());
     }
 }

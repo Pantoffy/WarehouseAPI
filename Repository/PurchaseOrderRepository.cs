@@ -28,6 +28,19 @@ namespace WarehouseAPI.Repository
             if (poExists)
                 throw new InvalidOperationException($"Purchase Order number '{purchaseOrder.PoNumber}' already exists.");
 
+            // Validate PurchaseOrderDetails materials exist
+            if (purchaseOrder.PurchaseOrderDetails?.Any() == true)
+            {
+                var materialIds = purchaseOrder.PurchaseOrderDetails.Select(d => d.MaterialId).Distinct();
+                var existingMaterials = await context.Materials.Where(m => materialIds.Contains(m.Id)).Select(m => m.Id).ToListAsync();
+
+                foreach (var materialId in materialIds)
+                {
+                    if (!existingMaterials.Contains(materialId))
+                        throw new InvalidOperationException($"Material with ID {materialId} does not exist.");
+                }
+            }
+
             var newPurchaseOrder = new PurchaseOrder
             {
                 Code = purchaseOrder.Code,
@@ -47,22 +60,61 @@ namespace WarehouseAPI.Repository
             context.PurchaseOrder.Add(newPurchaseOrder);
             await context.SaveChangesAsync();
 
-            return new PurchaseOrderResponse
+            // Add PurchaseOrderDetails if provided
+            if (purchaseOrder.PurchaseOrderDetails?.Any() == true)
             {
-                Id = newPurchaseOrder.Id,
-                Code = newPurchaseOrder.Code,
-                PoNumber = newPurchaseOrder.PoNumber,
-                OrderDate = newPurchaseOrder.OrderDate,
-                SupplierId = newPurchaseOrder.SupplierId,
-                ExpectedDeliveryDate = newPurchaseOrder.ExpectedDeliveryDate,
-                TotalAmount = newPurchaseOrder.TotalAmount,
-                Status = newPurchaseOrder.Status,
-                CreatedBy = newPurchaseOrder.CreatedBy,
-                ApprovedBy = newPurchaseOrder.ApprovedBy,
-                ApprovedAt = newPurchaseOrder.ApprovedAt,
-                Note = newPurchaseOrder.Note,
-                CreatedAt = newPurchaseOrder.CreatedAt
-            };
+                var details = purchaseOrder.PurchaseOrderDetails.Select(d => new PurchaseOrderDetail
+                {
+                    PurchaseOrderId = newPurchaseOrder.Id,
+                    MaterialId = d.MaterialId,
+                    UnitId = d.UnitId,
+                    Quantity = d.Quantity,
+                    UnitPrice = d.UnitPrice,
+                    Amount = d.Quantity * d.UnitPrice, // Auto-calculate
+                    Note = d.Note
+                }).ToList();
+
+                context.PurchaseOrderDetail.AddRange(details);
+                await context.SaveChangesAsync();
+            }
+
+            // Reload full data with related entities to return
+            var result = await context.PurchaseOrder
+                .Include(po => po.Supplier)
+                .Include(po => po.PurchaseOrderDetails!)
+                    .ThenInclude(pod => pod.Material)
+                .Where(po => po.Id == newPurchaseOrder.Id)
+                .Select(po => new PurchaseOrderResponse
+                {
+                    Id = po.Id,
+                    Code = po.Code,
+                    PoNumber = po.PoNumber,
+                    OrderDate = po.OrderDate,
+                    SupplierId = po.SupplierId,
+                    ExpectedDeliveryDate = po.ExpectedDeliveryDate,
+                    TotalAmount = po.TotalAmount,
+                    Status = po.Status,
+                    CreatedBy = po.CreatedBy,
+                    ApprovedBy = po.ApprovedBy,
+                    ApprovedAt = po.ApprovedAt,
+                    Note = po.Note,
+                    CreatedAt = po.CreatedAt,
+                    Supplier = po.Supplier,
+                    PurchaseOrderDetails = po.PurchaseOrderDetails!.Select(pod => new PurchaseOrderDetailResponse
+                    {
+                        Id = pod.Id,
+                        PurchaseOrderId = pod.PurchaseOrderId,
+                        MaterialId = pod.MaterialId,
+                        UnitId = pod.UnitId,
+                        Quantity = pod.Quantity,
+                        UnitPrice = pod.UnitPrice,
+                        Amount = pod.Amount,
+                        Note = pod.Note,
+                        Material = pod.Material
+                    }).ToList()
+                }).FirstOrDefaultAsync();
+
+            return result!;
         }
 
         public async Task<bool> DeletePurchaseOrderByIdAsync(int id)
@@ -97,7 +149,18 @@ namespace WarehouseAPI.Repository
                     Note = po.Note,
                     CreatedAt = po.CreatedAt,
                     Supplier = po.Supplier,
-                    PurchaseOrderDetails = po.PurchaseOrderDetails
+                    PurchaseOrderDetails = po.PurchaseOrderDetails!.Select(pod => new PurchaseOrderDetailResponse
+                    {
+                        Id = pod.Id,
+                        PurchaseOrderId = pod.PurchaseOrderId,
+                        MaterialId = pod.MaterialId,
+                        UnitId = pod.UnitId,
+                        Quantity = pod.Quantity,
+                        UnitPrice = pod.UnitPrice,
+                        Amount = pod.Amount,
+                        Note = pod.Note,
+                        Material = pod.Material
+                    }).ToList()
                 }).ToListAsync();
 
         public async Task<PurchaseOrderResponse?> GetPurchaseOrderByIdAsync(int id)
@@ -123,7 +186,18 @@ namespace WarehouseAPI.Repository
                     Note = po.Note,
                     CreatedAt = po.CreatedAt,
                     Supplier = po.Supplier,
-                    PurchaseOrderDetails = po.PurchaseOrderDetails
+                    PurchaseOrderDetails = po.PurchaseOrderDetails!.Select(pod => new PurchaseOrderDetailResponse
+                    {
+                        Id = pod.Id,
+                        PurchaseOrderId = pod.PurchaseOrderId,
+                        MaterialId = pod.MaterialId,
+                        UnitId = pod.UnitId,
+                        Quantity = pod.Quantity,
+                        UnitPrice = pod.UnitPrice,
+                        Amount = pod.Amount,
+                        Note = pod.Note,
+                        Material = pod.Material
+                    }).ToList()
                 }).FirstOrDefaultAsync();
 
             return result;
@@ -131,7 +205,9 @@ namespace WarehouseAPI.Repository
 
         public async Task<bool> UpdatePurchaseOrderByIdAsync(int id, UpdatePurchaseOrderRequest purchaseOrder)
         {
-            var existingPurchaseOrder = await context.PurchaseOrder.FindAsync(id);
+            var existingPurchaseOrder = await context.PurchaseOrder
+                .Include(po => po.PurchaseOrderDetails)
+                .FirstOrDefaultAsync(po => po.Id == id);
             if (existingPurchaseOrder is null)
                 return false;
 
@@ -145,6 +221,19 @@ namespace WarehouseAPI.Repository
             if (poExists)
                 throw new InvalidOperationException($"Purchase Order number '{purchaseOrder.PoNumber}' already exists.");
 
+            // Validate PurchaseOrderDetails materials exist
+            if (purchaseOrder.PurchaseOrderDetails?.Any() == true)
+            {
+                var materialIds = purchaseOrder.PurchaseOrderDetails.Select(d => d.MaterialId).Distinct();
+                var existingMaterials = await context.Materials.Where(m => materialIds.Contains(m.Id)).Select(m => m.Id).ToListAsync();
+
+                foreach (var materialId in materialIds)
+                {
+                    if (!existingMaterials.Contains(materialId))
+                        throw new InvalidOperationException($"Material with ID {materialId} does not exist.");
+                }
+            }
+
             existingPurchaseOrder.Code = purchaseOrder.Code;
             existingPurchaseOrder.PoNumber = purchaseOrder.PoNumber;
             existingPurchaseOrder.OrderDate = purchaseOrder.OrderDate;
@@ -157,6 +246,32 @@ namespace WarehouseAPI.Repository
             existingPurchaseOrder.ApprovedAt = purchaseOrder.ApprovedAt;
             existingPurchaseOrder.Note = purchaseOrder.Note;
             existingPurchaseOrder.CreatedAt = purchaseOrder.CreatedAt;
+
+            // Handle PurchaseOrderDetails (update/add/delete)
+            if (purchaseOrder.PurchaseOrderDetails?.Any() == true)
+            {
+                // Xóa chi tiết cũ
+                context.PurchaseOrderDetail.RemoveRange(existingPurchaseOrder.PurchaseOrderDetails ?? new List<PurchaseOrderDetail>());
+
+                // Thêm chi tiết mới
+                var details = purchaseOrder.PurchaseOrderDetails.Select(d => new PurchaseOrderDetail
+                {
+                    PurchaseOrderId = id,
+                    MaterialId = d.MaterialId,
+                    UnitId = d.UnitId,
+                    Quantity = d.Quantity,
+                    UnitPrice = d.UnitPrice,
+                    Amount = d.Quantity * d.UnitPrice, // Auto-calculate
+                    Note = d.Note
+                }).ToList();
+
+                context.PurchaseOrderDetail.AddRange(details);
+            }
+            else
+            {
+                // Nếu không có details, xóa tất cả details cũ
+                context.PurchaseOrderDetail.RemoveRange(existingPurchaseOrder.PurchaseOrderDetails ?? new List<PurchaseOrderDetail>());
+            }
 
             await context.SaveChangesAsync();
             return true;

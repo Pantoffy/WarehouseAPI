@@ -6,7 +6,7 @@ namespace WarehouseAPI.Controllers.Inventory
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class InventoryController(IInventoryService service) : ControllerBase
+    public class InventoryController(IInventoryService service, IInventoryUpdateService inventoryUpdateService) : ControllerBase
     {
         //hien danh sach ton kho
         [Route(InventoryRouter.GetAllInventories), HttpGet]
@@ -56,6 +56,36 @@ namespace WarehouseAPI.Controllers.Inventory
         {
             var deleted = await service.DeleteInventoryByIdAsync(id);
             return deleted ? Ok("Xóa tồn kho thành công") : NotFound("Không tìm thấy tồn kho với Id đã cho.");
+        }
+
+        // Update inventory when import receipt is approved
+        [Route(InventoryRouter.UpdateInventoryOnImportApproved), HttpPost("{importReceiptId}")]
+        public async Task<ActionResult> UpdateInventoryOnImportApproved(int importReceiptId)
+        {
+            try
+            {
+                var updated = await inventoryUpdateService.UpdateInventoryOnImportApprovedAsync(importReceiptId);
+                return updated ? Ok("Cập nhật tồn kho nhập hàng thành công") : NotFound("Không tìm thấy phiếu nhập với Id đã cho.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        // Update inventory when export receipt is approved
+        [Route(InventoryRouter.UpdateInventoryOnExportApproved), HttpPost("{exportReceiptId}")]
+        public async Task<ActionResult> UpdateInventoryOnExportApproved(int exportReceiptId)
+        {
+            try
+            {
+                var updated = await inventoryUpdateService.UpdateInventoryOnExportApprovedAsync(exportReceiptId);
+                return updated ? Ok("Cập nhật tồn kho xuất hàng thành công") : NotFound("Không tìm thấy phiếu xuất với Id đã cho.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
     }
 }
