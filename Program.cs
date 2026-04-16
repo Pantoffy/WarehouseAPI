@@ -15,6 +15,7 @@ using WarehouseAPI.Services.PurchaseOrder;
 using WarehouseAPI.Services.Auth;
 using WarehouseAPI.Services.Unit;
 using WarehouseAPI.Services.Stock;
+using WarehouseAPI.Services.Calendar;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -65,6 +66,9 @@ builder.Services.AddScoped<StockCheckTeamRepository>();
 builder.Services.AddScoped<IStockService, StockService>();
 builder.Services.AddScoped<IStockDetailService, StockDetailService>();
 builder.Services.AddScoped<IStockTeamService, StockTeamService>();
+
+// Calendar Service
+builder.Services.AddScoped<ICalendarService, CalendarService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>

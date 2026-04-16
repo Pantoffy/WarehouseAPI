@@ -22,6 +22,7 @@
   <ItemGroup>
     <Folder Include="Controllers\Category\" />
     <Folder Include="Database\" />
+    <Folder Include="DTOs\CalendarDTOs\" />
     <Folder Include="Services\Category\" />
   </ItemGroup>
 
