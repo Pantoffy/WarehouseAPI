@@ -1,22 +1,28 @@
-using WarehouseAPI.DTOs.StockDTOs;
+using Microsoft.EntityFrameworkCore;
+using WarehouseAPI.Data;
 using WarehouseAPI.DTOs.MaterialDTOs;
+using WarehouseAPI.DTOs.StockDTOs;
 using WarehouseAPI.DTOs.WarehouseDTOs;
 using StockCheckModel = WarehouseAPI.Models.StockCheck;
+using WarehouseAPI.Models;
 using WarehouseAPI.Repository;
 
 namespace WarehouseAPI.Services.Stock
 {
     public class StockService : IStockService
     {
+        private readonly AppDbContext _context;
         private readonly StockCheckRepository _repository;
         private readonly StockCheckDetailRepository _detailRepository;
         private readonly StockCheckTeamRepository _teamRepository;
 
         public StockService(
+            AppDbContext context,
             StockCheckRepository repository,
             StockCheckDetailRepository detailRepository,
             StockCheckTeamRepository teamRepository)
         {
+            _context = context;
             _repository = repository;
             _detailRepository = detailRepository;
             _teamRepository = teamRepository;
@@ -32,16 +38,14 @@ namespace WarehouseAPI.Services.Stock
         {
             var stockChecks = await _repository.GetAllAsync();
 
-            // Load all details in one query to avoid DbContext concurrency issues
             var allDetails = await _detailRepository.GetAllAsync();
-
             var detailsByStockId = allDetails.GroupBy(d => d.StockCheckId).ToDictionary(g => g.Key, g => g.ToList());
 
-            // Map in-memory without concurrent DB calls
-            // Use Teams from StockCheck.Teams navigation property (already loaded by repository)
-            var results = stockChecks.Select(sc => MapToResponse(sc, 
-                detailsByStockId.ContainsKey(sc.Id) ? detailsByStockId[sc.Id] : new(),
-                sc.Teams?.ToList() ?? new())).ToList();
+            var results = stockChecks.Select(sc => MapToResponse(
+                sc,
+                detailsByStockId.TryGetValue(sc.Id, out var details) ? details : [],
+                sc.Teams?.ToList() ?? []))
+                .ToList();
             return results;
         }
 
@@ -49,7 +53,6 @@ namespace WarehouseAPI.Services.Stock
         {
             var stockChecks = await _repository.GetByWarehouseIdAsync(warehouseId);
 
-            // Load all details for these stock checks
             var stockCheckIds = stockChecks.Select(sc => sc.Id).ToList();
             var allDetails = await _detailRepository.GetAllAsync();
 
@@ -58,29 +61,100 @@ namespace WarehouseAPI.Services.Stock
                 .GroupBy(d => d.StockCheckId)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
-            var results = stockChecks.Select(sc => MapToResponse(sc, 
-                detailsByStockId.ContainsKey(sc.Id) ? detailsByStockId[sc.Id] : new(),
-                sc.Teams?.ToList() ?? new())).ToList();
+            var results = stockChecks.Select(sc => MapToResponse(
+                sc,
+                detailsByStockId.TryGetValue(sc.Id, out var details) ? details : [],
+                sc.Teams?.ToList() ?? []))
+                .ToList();
             return results;
         }
 
         public async Task<StockResponse> CreateAsync(CreateStockRequest request)
         {
-            var stockCheck = new StockCheckModel
-            {
-                Code = request.Code,
-                Name = request.Name,
-                WarehouseId = request.WarehouseId,
-                StartDate = request.StartDate,
-                EndDate = request.EndDate,
-                CreatedBy = request.CreatedBy,
-                Note = request.Note,
-                Status = "Nháp",
-                CreatedTime = DateTime.Now
-            };
+            var duplicateMaterialIds = request.StockCheckDetails
+                .GroupBy(d => d.MaterialId)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToList();
 
-            var created = await _repository.CreateAsync(stockCheck);
-            return await MapToResponseAsync(created);
+            if (duplicateMaterialIds.Any())
+                throw new InvalidOperationException("Chi tiết phiếu kiểm không được trùng vật tư.");
+
+            var warehouseExists = await _context.Warehouse.AnyAsync(w => w.Id == request.WarehouseId);
+            if (!warehouseExists)
+                throw new InvalidOperationException($"Kho hàng có ID {request.WarehouseId} không tồn tại.");
+
+            var materialIds = request.StockCheckDetails.Select(d => d.MaterialId).Distinct().ToList();
+            var existingMaterialIds = await _context.Materials
+                .Where(m => materialIds.Contains(m.Id))
+                .Select(m => m.Id)
+                .ToListAsync();
+
+            foreach (var materialId in materialIds)
+            {
+                if (!existingMaterialIds.Contains(materialId))
+                    throw new InvalidOperationException($"Vật liệu có ID {materialId} không tồn tại.");
+            }
+
+            var executionStrategy = _context.Database.CreateExecutionStrategy();
+            return await executionStrategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    var stockCheck = new StockCheckModel
+                    {
+                        Code = request.Code,
+                        Name = request.Name,
+                        WarehouseId = request.WarehouseId,
+                        StartDate = request.StartDate,
+                        EndDate = request.EndDate,
+                        CreatedBy = request.CreatedBy,
+                        Note = request.Note,
+                        Status = "Nháp",
+                        CreatedTime = DateTime.Now
+                    };
+
+                    _context.StockCheck.Add(stockCheck);
+                    await _context.SaveChangesAsync();
+
+                    var details = request.StockCheckDetails.Select(d => new StockCheckDetail
+                    {
+                        StockCheckId = stockCheck.Id,
+                        MaterialId = d.MaterialId,
+                        WarehouseId = stockCheck.WarehouseId,
+                        SystemQuantity = d.SystemQuantity,
+                        ActualQuantity = d.ActualQuantity,
+                        HandlingProposal = d.HandlingProposal,
+                        RecordedCheck = true,
+                        Status = "Chưa xử lý"
+                    }).ToList();
+
+                    var teams = request.Teams.Select(t => new StockCheckTeam
+                    {
+                        StockCheckId = stockCheck.Id,
+                        Name = t.Name,
+                        Role = t.Role,
+                        Note = t.Note
+                    }).ToList();
+
+                    _context.StockCheckDetail.AddRange(details);
+                    _context.StockCheckTeam.AddRange(teams);
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    var created = await _repository.GetByIdAsync(stockCheck.Id);
+                    if (created == null)
+                        throw new InvalidOperationException("Không thể tải phiếu kiểm vừa tạo.");
+
+                    return await MapToResponseAsync(created);
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            });
         }
 
         public async Task<StockResponse> UpdateAsync(int id, UpdateStockRequest request)
@@ -101,7 +175,7 @@ namespace WarehouseAPI.Services.Stock
                 stockCheck.ApprovedBy = request.ApprovedBy;
             if (!string.IsNullOrEmpty(request.Status))
                 stockCheck.Status = request.Status;
-            if (request.Status == "Duyệt" && !stockCheck.ApprovedAt.HasValue)
+            if (request.Status == "Đã duyệt" && !stockCheck.ApprovedAt.HasValue)
                 stockCheck.ApprovedAt = DateTime.Now;
             if (!string.IsNullOrEmpty(request.Note))
                 stockCheck.Note = request.Note;
@@ -125,7 +199,7 @@ namespace WarehouseAPI.Services.Stock
             return MapToResponse(stockCheck, details, teams);
         }
 
-        private StockResponse MapToResponse(StockCheckModel stockCheck, List<Models.StockCheckDetail> details, List<Models.StockCheckTeam> teams)
+        private StockResponse MapToResponse(StockCheckModel stockCheck, List<StockCheckDetail> details, List<StockCheckTeam> teams)
         {
             return new StockResponse
             {
@@ -175,7 +249,6 @@ namespace WarehouseAPI.Services.Stock
                         CategoryId = d.Material.CategoryId,
                         UnitId = d.Material.UnitId,
                         SupplierId = d.Material.SupplierId,
-                        StockQuantity = d.Material.StockQuantity,
                         Status = d.Material.Status,
                         Note = d.Material.Note,
                         CreatedTime = d.Material.CreatedTime,

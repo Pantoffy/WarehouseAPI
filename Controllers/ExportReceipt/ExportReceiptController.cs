@@ -1,13 +1,19 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using WarehouseAPI.DTOs.ExportReceiptDTOs;
 using WarehouseAPI.Services.ExportReceipt;
 using WarehouseAPI.Services.Inventory;
+using WarehouseAPI.Services.Auth;
 
 namespace WarehouseAPI.Controllers.ExportReceipt
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ExportReceiptController(IExportReceiptService service, IInventoryUpdateService inventoryUpdateService) : ControllerBase
+    [Authorize]
+    public class ExportReceiptController(
+        IExportReceiptService service,
+        IInventoryUpdateService inventoryUpdateService,
+        IUserService userService) : ControllerBase
     {
         //hien danh sach phieu xuat
         [Route(ExportReceiptRouter.GetAllExportReceipts), HttpGet]
@@ -27,6 +33,9 @@ namespace WarehouseAPI.Controllers.ExportReceipt
         {
             try
             {
+                // Auto-fill createdBy from JWT token
+                exportReceipt.CreatedBy = userService.GetUsername(User);
+
                 var createdExportReceipt = await service.AddExportReceiptAsync(exportReceipt);
                 return CreatedAtAction(nameof(GetExportReceipt), new { id = createdExportReceipt.Id }, createdExportReceipt);
             }
@@ -42,20 +51,36 @@ namespace WarehouseAPI.Controllers.ExportReceipt
         {
             try
             {
+                var current = await service.GetExportReceiptByIdAsync(id);
+                if (current is null)
+                    return NotFound("Không tìm thấy phiếu xuất với Id đã cho.");
+
+                var previousStatus = current.Status ?? string.Empty;
+                var nextStatus = exportReceipt.Status ?? string.Empty;
+
+                var approvedStatuses = new[] { "Đã xác nhận", "Approved", "Đã duyệt", "Hoàn thành" };
+                var cancelledStatuses = new[] { "Đã hủy", "Cancelled", "Cancel", "Hủy", "Bị hủy" };
+
+                var wasApproved = approvedStatuses.Any(s => previousStatus.Equals(s, StringComparison.OrdinalIgnoreCase));
+                var isApproved = approvedStatuses.Any(s => nextStatus.Equals(s, StringComparison.OrdinalIgnoreCase));
+                var isCancelled = cancelledStatuses.Any(s => nextStatus.Equals(s, StringComparison.OrdinalIgnoreCase));
+
+                // Auto-fill ApprovedBy and ApprovedAt when transitioning to approved status
+                if (!wasApproved && isApproved)
+                {
+                    exportReceipt.ApprovedBy = userService.GetUsername(User);
+                    exportReceipt.ApprovedAt = DateTime.Now;
+                }
+
                 var updated = await service.UpdateExportReceiptByIdAsync(id, exportReceipt);
                 if (!updated)
                     return NotFound("Không tìm thấy phiếu xuất với Id đã cho.");
 
-                // If status changed to "Approved", update inventory (trừ hàng)
-                if (exportReceipt.Status?.Equals("Approved", StringComparison.OrdinalIgnoreCase) == true)
+                if (!wasApproved && isApproved)
                 {
                     await inventoryUpdateService.UpdateInventoryOnExportApprovedAsync(id);
                 }
-
-                // If status changed to "Cancelled", revert inventory (hoàn hàng)
-                // Hỗ trợ: Cancelled, Cancel, Hủy, Đã hủy, Bị hủy
-                var cancelledStatuses = new[] { "Cancelled", "Cancel", "Hủy", "Đã hủy", "Bị hủy" };
-                if (cancelledStatuses.Any(s => exportReceipt.Status?.Equals(s, StringComparison.OrdinalIgnoreCase) == true))
+                else if (wasApproved && isCancelled)
                 {
                     await inventoryUpdateService.UpdateInventoryOnExportCancelledAsync(id);
                 }
@@ -66,10 +91,15 @@ namespace WarehouseAPI.Controllers.ExportReceipt
             {
                 return BadRequest(ex.Message);
             }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
         }
 
         //xoa phieu xuat
         [Route(ExportReceiptRouter.DeleteExportReceipt), HttpDelete("{id}")]
+        [Authorize(Roles = "Quản lý kho")]
         public async Task<ActionResult> DeleteExportReceipt(int id)
         {
             var deleted = await service.DeleteExportReceiptByIdAsync(id);

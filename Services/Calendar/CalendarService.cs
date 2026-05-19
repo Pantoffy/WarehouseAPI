@@ -21,25 +21,26 @@ namespace WarehouseAPI.Services.Calendar
 
         /// <summary>
         /// Lấy tất cả event từ 4 bảng: ImportReceipt, ExportReceipt, PurchaseOrder, StockCheck
-        /// Có thể filter theo tháng/năm
+        /// Nếu có month/year thì filter theo tháng, ngược lại lấy tất cả
         /// </summary>
         public async Task<List<CalendarEventResponse>> GetEventsAsync(int? month = null, int? year = null)
         {
             var events = new List<CalendarEventResponse>();
 
-            var startDate = month.HasValue && year.HasValue
-                ? new DateTime(year.Value, month.Value, 1)
-                : new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            DateTime? startDate = null;
+            DateTime? endDate = null;
+            if (month.HasValue && year.HasValue)
+            {
+                startDate = new DateTime(year.Value, month.Value, 1);
+                endDate = startDate.Value.AddMonths(1).AddTicks(-1);
+            }
 
-            var endDate = startDate.AddMonths(1).AddDays(-1);
+            // ImportReceipt
+            var importQuery = _context.ImportReceipt.Include(ir => ir.Warehouse).AsQueryable();
+            if (startDate.HasValue && endDate.HasValue)
+                importQuery = importQuery.Where(ir => ir.ImportTime >= startDate.Value && ir.ImportTime <= endDate.Value);
 
-            // Lấy ImportReceipt
-            var importReceipts = await _context.ImportReceipt
-                .Include(ir => ir.Warehouse)
-                .Where(ir => ir.ImportTime >= startDate && ir.ImportTime <= endDate)
-                .Where(ir => ir.Status == "Đã duyệt" || ir.Status == "Hoàn thành")
-                .ToListAsync();
-
+            var importReceipts = await importQuery.ToListAsync();
             foreach (var import in importReceipts)
             {
                 events.Add(new CalendarEventResponse
@@ -57,13 +58,12 @@ namespace WarehouseAPI.Services.Calendar
                 });
             }
 
-            // Lấy ExportReceipt
-            var exportReceipts = await _context.ExportReceipt
-                .Include(er => er.Warehouse)
-                .Where(er => er.ExportDate >= startDate && er.ExportDate <= endDate)
-                .Where(er => er.Status == "Đã duyệt" || er.Status == "Hoàn thành")
-                .ToListAsync();
+            // ExportReceipt
+            var exportQuery = _context.ExportReceipt.Include(er => er.Warehouse).AsQueryable();
+            if (startDate.HasValue && endDate.HasValue)
+                exportQuery = exportQuery.Where(er => er.ExportDate >= startDate.Value && er.ExportDate <= endDate.Value);
 
+            var exportReceipts = await exportQuery.ToListAsync();
             foreach (var export in exportReceipts)
             {
                 events.Add(new CalendarEventResponse
@@ -81,19 +81,20 @@ namespace WarehouseAPI.Services.Calendar
                 });
             }
 
-            // Lấy PurchaseOrder
-            var purchaseOrders = await _context.PurchaseOrder
-                .Where(po => po.OrderDate >= startDate && po.OrderDate <= endDate)
-                .Where(po => po.Status == "Đã duyệt" || po.Status == "Hoàn thành")
-                .ToListAsync();
+            // PurchaseOrder: ưu tiên ExpectedDeliveryDate, fallback OrderDate
+            var poQuery = _context.PurchaseOrder.AsQueryable();
+            if (startDate.HasValue && endDate.HasValue)
+                poQuery = poQuery.Where(po => (po.ExpectedDeliveryDate ?? po.OrderDate) >= startDate.Value && (po.ExpectedDeliveryDate ?? po.OrderDate) <= endDate.Value);
 
+            var purchaseOrders = await poQuery.ToListAsync();
             foreach (var po in purchaseOrders)
             {
+                var poDate = po.ExpectedDeliveryDate ?? po.OrderDate;
                 events.Add(new CalendarEventResponse
                 {
                     Id = po.Id,
                     Title = $"PO - {po.Code}",
-                    Date = po.OrderDate,
+                    Date = poDate,
                     Type = "po",
                     Color = "blue",
                     Status = po.Status,
@@ -103,20 +104,21 @@ namespace WarehouseAPI.Services.Calendar
                 });
             }
 
-            // Lấy StockCheck
-            var stockChecks = await _context.StockCheck
-                .Include(sc => sc.Warehouse)
-                .Where(sc => sc.CheckTime != null && sc.CheckTime >= startDate && sc.CheckTime <= endDate)
-                .Where(sc => sc.Status == "Đã duyệt" || sc.Status == "Hoàn thành")
-                .ToListAsync();
+            // StockCheck: ưu tiên CheckTime, fallback EndDate, StartDate, CreatedTime
+            var stockQuery = _context.StockCheck.Include(sc => sc.Warehouse).AsQueryable();
+            if (startDate.HasValue && endDate.HasValue)
+                stockQuery = stockQuery.Where(sc => (sc.CheckTime ?? sc.EndDate ?? sc.StartDate ?? sc.CreatedTime) >= startDate.Value
+                                                  && (sc.CheckTime ?? sc.EndDate ?? sc.StartDate ?? sc.CreatedTime) <= endDate.Value);
 
+            var stockChecks = await stockQuery.ToListAsync();
             foreach (var stock in stockChecks)
             {
+                var stockDate = stock.CheckTime ?? stock.EndDate ?? stock.StartDate ?? stock.CreatedTime;
                 events.Add(new CalendarEventResponse
                 {
                     Id = stock.Id,
                     Title = $"Kiểm kê - {stock.Code}",
-                    Date = stock.CheckTime.HasValue ? stock.CheckTime.Value : stock.CreatedTime,
+                    Date = stockDate,
                     Type = "stockcheck",
                     Color = "yellow",
                     Status = stock.Status,
@@ -126,7 +128,6 @@ namespace WarehouseAPI.Services.Calendar
                 });
             }
 
-            // Sắp xếp theo ngày
             return events.OrderBy(e => e.Date).ToList();
         }
 
@@ -137,11 +138,9 @@ namespace WarehouseAPI.Services.Calendar
         {
             var events = new List<CalendarEventResponse>();
 
-            // Lấy ImportReceipt
             var importReceipts = await _context.ImportReceipt
                 .Include(ir => ir.Warehouse)
                 .Where(ir => ir.ImportTime >= startDate && ir.ImportTime <= endDate)
-                .Where(ir => ir.Status == "Đã duyệt" || ir.Status == "Hoàn thành")
                 .ToListAsync();
 
             foreach (var import in importReceipts)
@@ -161,11 +160,9 @@ namespace WarehouseAPI.Services.Calendar
                 });
             }
 
-            // Lấy ExportReceipt
             var exportReceipts = await _context.ExportReceipt
                 .Include(er => er.Warehouse)
                 .Where(er => er.ExportDate >= startDate && er.ExportDate <= endDate)
-                .Where(er => er.Status == "Đã duyệt" || er.Status == "Hoàn thành")
                 .ToListAsync();
 
             foreach (var export in exportReceipts)
@@ -185,19 +182,18 @@ namespace WarehouseAPI.Services.Calendar
                 });
             }
 
-            // Lấy PurchaseOrder
             var purchaseOrders = await _context.PurchaseOrder
-                .Where(po => po.OrderDate >= startDate && po.OrderDate <= endDate)
-                .Where(po => po.Status == "Đã duyệt" || po.Status == "Hoàn thành")
+                .Where(po => (po.ExpectedDeliveryDate ?? po.OrderDate) >= startDate && (po.ExpectedDeliveryDate ?? po.OrderDate) <= endDate)
                 .ToListAsync();
 
             foreach (var po in purchaseOrders)
             {
+                var poDate = po.ExpectedDeliveryDate ?? po.OrderDate;
                 events.Add(new CalendarEventResponse
                 {
                     Id = po.Id,
                     Title = $"PO - {po.Code}",
-                    Date = po.OrderDate,
+                    Date = poDate,
                     Type = "po",
                     Color = "blue",
                     Status = po.Status,
@@ -207,20 +203,20 @@ namespace WarehouseAPI.Services.Calendar
                 });
             }
 
-            // Lấy StockCheck
             var stockChecks = await _context.StockCheck
                 .Include(sc => sc.Warehouse)
-                .Where(sc => sc.CheckTime != null && sc.CheckTime >= startDate && sc.CheckTime <= endDate)
-                .Where(sc => sc.Status == "Đã duyệt" || sc.Status == "Hoàn thành")
+                .Where(sc => (sc.CheckTime ?? sc.EndDate ?? sc.StartDate ?? sc.CreatedTime) >= startDate
+                          && (sc.CheckTime ?? sc.EndDate ?? sc.StartDate ?? sc.CreatedTime) <= endDate)
                 .ToListAsync();
 
             foreach (var stock in stockChecks)
             {
+                var stockDate = stock.CheckTime ?? stock.EndDate ?? stock.StartDate ?? stock.CreatedTime;
                 events.Add(new CalendarEventResponse
                 {
                     Id = stock.Id,
                     Title = $"Kiểm kê - {stock.Code}",
-                    Date = stock.CheckTime.HasValue ? stock.CheckTime.Value : stock.CreatedTime,
+                    Date = stockDate,
                     Type = "stockcheck",
                     Color = "yellow",
                     Status = stock.Status,
@@ -230,7 +226,6 @@ namespace WarehouseAPI.Services.Calendar
                 });
             }
 
-            // Sắp xếp theo ngày
             return events.OrderBy(e => e.Date).ToList();
         }
     }

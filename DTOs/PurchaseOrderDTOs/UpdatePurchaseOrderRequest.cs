@@ -17,7 +17,7 @@ namespace WarehouseAPI.DTOs.PurchaseOrderDTOs
         public DateTime? ApprovedAt { get; set; }
 
         public string? Note { get; set; }
-        public DateTime CreatedAt { get; set; }
+        public DateTime? CreatedAt { get; set; }
         public UpdatePurchaseOrderDetailRequest[]? PurchaseOrderDetails { get; set; }
     }
 }

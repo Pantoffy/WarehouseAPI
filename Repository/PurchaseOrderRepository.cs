@@ -41,6 +41,8 @@ namespace WarehouseAPI.Repository
                 }
             }
 
+            var normalizedStatus = NormalizePurchaseOrderStatus(purchaseOrder.Status);
+
             var newPurchaseOrder = new PurchaseOrder
             {
                 Code = purchaseOrder.Code,
@@ -49,7 +51,7 @@ namespace WarehouseAPI.Repository
                 SupplierId = purchaseOrder.SupplierId,
                 ExpectedDeliveryDate = purchaseOrder.ExpectedDeliveryDate,
                 TotalAmount = purchaseOrder.TotalAmount,
-                Status = purchaseOrder.Status,
+                Status = normalizedStatus,
                 CreatedBy = purchaseOrder.CreatedBy,
                 ApprovedBy = purchaseOrder.ApprovedBy,
                 ApprovedAt = purchaseOrder.ApprovedAt,
@@ -240,12 +242,18 @@ namespace WarehouseAPI.Repository
             existingPurchaseOrder.SupplierId = purchaseOrder.SupplierId;
             existingPurchaseOrder.ExpectedDeliveryDate = purchaseOrder.ExpectedDeliveryDate;
             existingPurchaseOrder.TotalAmount = purchaseOrder.TotalAmount;
-            existingPurchaseOrder.Status = purchaseOrder.Status;
-            existingPurchaseOrder.CreatedBy = purchaseOrder.CreatedBy;
-            existingPurchaseOrder.ApprovedBy = purchaseOrder.ApprovedBy;
-            existingPurchaseOrder.ApprovedAt = purchaseOrder.ApprovedAt;
+            existingPurchaseOrder.Status = NormalizePurchaseOrderStatus(purchaseOrder.Status);
+            if (!string.IsNullOrEmpty(purchaseOrder.CreatedBy))
+                existingPurchaseOrder.CreatedBy = purchaseOrder.CreatedBy;
+            if (!string.IsNullOrEmpty(purchaseOrder.ApprovedBy))
+                existingPurchaseOrder.ApprovedBy = purchaseOrder.ApprovedBy;
+            if (purchaseOrder.ApprovedAt.HasValue)
+                existingPurchaseOrder.ApprovedAt = purchaseOrder.ApprovedAt;
             existingPurchaseOrder.Note = purchaseOrder.Note;
-            existingPurchaseOrder.CreatedAt = purchaseOrder.CreatedAt;
+            if (purchaseOrder.CreatedAt.HasValue && purchaseOrder.CreatedAt.Value > DateTime.MinValue)
+            {
+                existingPurchaseOrder.CreatedAt = purchaseOrder.CreatedAt.Value;
+            }
 
             // Handle PurchaseOrderDetails (update/add/delete)
             if (purchaseOrder.PurchaseOrderDetails?.Any() == true)
@@ -275,6 +283,44 @@ namespace WarehouseAPI.Repository
 
             await context.SaveChangesAsync();
             return true;
+        }
+
+        private static string NormalizePurchaseOrderStatus(string? status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+                throw new InvalidOperationException("Trạng thái đơn đặt hàng là bắt buộc.");
+
+            var value = status.Trim();
+
+            if (value.Equals("Đang soạn thảo", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Draft", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Nháp", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Đang soạn thảo";
+            }
+
+            if (value.Equals("Chờ xác nhận", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Pending", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Chờ duyệt", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Chờ xác nhận";
+            }
+
+            if (value.Equals("Đã xác nhận", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Approved", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Đã duyệt", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Đã xác nhận";
+            }
+
+            if (value.Equals("Đã giao hàng", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Delivered", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Hoàn thành", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Đã giao hàng";
+            }
+
+            throw new InvalidOperationException($"Trạng thái đơn đặt hàng không hợp lệ: {status}");
         }
     }
 }

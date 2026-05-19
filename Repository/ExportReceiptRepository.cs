@@ -31,6 +31,15 @@ namespace WarehouseAPI.Repository
             // Validate ExportReceiptDetails materials exist and check stock
             if (exportReceipt.ExportReceiptDetails?.Any() == true)
             {
+                var duplicateMaterialIds = exportReceipt.ExportReceiptDetails
+                    .GroupBy(d => d.MaterialId)
+                    .Where(g => g.Count() > 1)
+                    .Select(g => g.Key)
+                    .ToList();
+
+                if (duplicateMaterialIds.Any())
+                    throw new InvalidOperationException("Chi tiết phiếu xuất không được trùng vật liệu.");
+
                 var materialIds = exportReceipt.ExportReceiptDetails.Select(d => d.MaterialId).Distinct();
                 var existingMaterials = await context.Materials
                     .Where(m => materialIds.Contains(m.Id))
@@ -55,6 +64,8 @@ namespace WarehouseAPI.Repository
                 }
             }
 
+            var normalizedStatus = NormalizeExportStatus(exportReceipt.Status);
+
             var newExportReceipt = new ExportReceipt
             {
                 Code = exportReceipt.Code,
@@ -65,7 +76,7 @@ namespace WarehouseAPI.Repository
                 Reason = exportReceipt.Reason,
                 DocumentNo = exportReceipt.DocumentNo,
                 TotalAmount = 0, // Will be calculated from details
-                Status = exportReceipt.Status,
+                Status = normalizedStatus,
                 CreatedBy = exportReceipt.CreatedBy,
                 ApprovedBy = exportReceipt.ApprovedBy,
                 ApprovedAt = exportReceipt.ApprovedAt,
@@ -259,6 +270,15 @@ namespace WarehouseAPI.Repository
             // Validate materials exist if ExportReceiptDetails provided
             if (exportReceipt.ExportReceiptDetails?.Any() == true)
             {
+                var duplicateMaterialIds = exportReceipt.ExportReceiptDetails
+                    .GroupBy(d => d.MaterialId)
+                    .Where(g => g.Count() > 1)
+                    .Select(g => g.Key)
+                    .ToList();
+
+                if (duplicateMaterialIds.Any())
+                    throw new InvalidOperationException("Chi tiết phiếu xuất không được trùng vật liệu.");
+
                 var materialIds = exportReceipt.ExportReceiptDetails.Select(d => d.MaterialId).Distinct();
                 var existingMaterials = await context.Materials
                     .Where(m => materialIds.Contains(m.Id))
@@ -279,12 +299,18 @@ namespace WarehouseAPI.Repository
             existingExportReceipt.ReceiverName = exportReceipt.ReceiverName;
             existingExportReceipt.Reason = exportReceipt.Reason;
             existingExportReceipt.DocumentNo = exportReceipt.DocumentNo;
-            existingExportReceipt.Status = exportReceipt.Status;
-            existingExportReceipt.CreatedBy = exportReceipt.CreatedBy;
-            existingExportReceipt.ApprovedBy = exportReceipt.ApprovedBy;
-            existingExportReceipt.ApprovedAt = exportReceipt.ApprovedAt;
+            existingExportReceipt.Status = NormalizeExportStatus(exportReceipt.Status);
+            if (!string.IsNullOrEmpty(exportReceipt.CreatedBy))
+                existingExportReceipt.CreatedBy = exportReceipt.CreatedBy;
+            if (!string.IsNullOrEmpty(exportReceipt.ApprovedBy))
+                existingExportReceipt.ApprovedBy = exportReceipt.ApprovedBy;
+            if (exportReceipt.ApprovedAt.HasValue)
+                existingExportReceipt.ApprovedAt = exportReceipt.ApprovedAt;
             existingExportReceipt.Note = exportReceipt.Note;
-            existingExportReceipt.CreatedAt = exportReceipt.CreatedAt;
+            if (exportReceipt.CreatedAt.HasValue && exportReceipt.CreatedAt.Value > DateTime.MinValue)
+            {
+                existingExportReceipt.CreatedAt = exportReceipt.CreatedAt.Value;
+            }
 
             // Update ExportReceiptDetails if provided
             if (exportReceipt.ExportReceiptDetails != null)
@@ -319,6 +345,47 @@ namespace WarehouseAPI.Repository
 
             await context.SaveChangesAsync();
             return true;
+        }
+
+        private static string NormalizeExportStatus(string? status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+                throw new InvalidOperationException("Trạng thái phiếu xuất là bắt buộc.");
+
+            var value = status.Trim();
+
+            if (value.Equals("Đã xác nhận", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Approved", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Đã duyệt", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Hoàn thành", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Đã xác nhận";
+            }
+
+            if (value.Equals("Đã hủy", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Cancelled", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Cancel", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Hủy", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Bị hủy", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Đã hủy";
+            }
+
+            if (value.Equals("Chờ xác nhận", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Pending", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Chờ duyệt", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Chờ xác nhận";
+            }
+
+            if (value.Equals("Đang soạn thảo", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Draft", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Nháp", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Đang soạn thảo";
+            }
+
+            throw new InvalidOperationException($"Trạng thái phiếu xuất không hợp lệ: {status}");
         }
     }
 }

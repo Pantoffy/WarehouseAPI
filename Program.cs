@@ -5,6 +5,7 @@ using Scalar.AspNetCore;
 using System.Text;
 using WarehouseAPI.Data;
 using WarehouseAPI.Repository;
+using WarehouseAPI.Services;
 using WarehouseAPI.Services.Supplier;
 using WarehouseAPI.Services.Material;
 using WarehouseAPI.Services.Warehouse;
@@ -14,12 +15,15 @@ using WarehouseAPI.Services.ExportReceipt;
 using WarehouseAPI.Services.PurchaseOrder;
 using WarehouseAPI.Services.Auth;
 using WarehouseAPI.Services.Unit;
+using WarehouseAPI.Services.Category;
 using WarehouseAPI.Services.Stock;
 using WarehouseAPI.Services.Calendar;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase);
 
 builder.Services.AddOpenApi();
 
@@ -32,10 +36,12 @@ builder.Services.AddCors(options =>
             .WithOrigins(
                 "http://localhost:5173",
                 "https://localhost:5173",
+                "http://localhost:5174",
+                "https://localhost:5174",
                 "http://localhost:3000",
                 "https://localhost:3000")
             .WithHeaders("Content-Type", "Authorization", "ngrok-skip-browser-warning")
-            .WithMethods("POST", "PUT", "DELETE");
+            .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS");
     });
 });
 
@@ -55,9 +61,12 @@ builder.Services.AddScoped<IImportReceiptService, ImportReceiptService>();
 builder.Services.AddScoped<IExportReceiptService, ExportReceiptService>();
 builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
 builder.Services.AddScoped<IUnitService, UnitService>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IUOW, UOW>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IInventoryUpdateService, InventoryUpdateService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 // Stock Services
 builder.Services.AddScoped<StockCheckRepository>();
@@ -100,6 +109,7 @@ app.UseCors("AllowFrontend");
 
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();

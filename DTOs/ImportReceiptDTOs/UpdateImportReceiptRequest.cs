@@ -36,7 +36,7 @@ namespace WarehouseAPI.DTOs.ImportReceiptDTOs
         public DateTime? ApprovedAt { get; set; }
 
         public string? Note { get; set; }
-        public DateTime CreatedAt { get; set; }
+        public DateTime? CreatedAt { get; set; }
         public ImportReceiptDetail[]? ImportReceiptDetails { get; set; }
     }
 }

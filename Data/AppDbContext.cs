@@ -25,6 +25,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     {
         base.OnModelCreating(modelBuilder);
 
+        // Disable SQL OUTPUT clause for tables that may have database triggers
+        modelBuilder.Entity<ImportReceipt>().ToTable(tb => tb.UseSqlOutputClause(false));
+        modelBuilder.Entity<ImportReceiptDetail>().ToTable(tb => tb.UseSqlOutputClause(false));
+        modelBuilder.Entity<ExportReceipt>().ToTable(tb => tb.UseSqlOutputClause(false));
+        modelBuilder.Entity<ExportReceiptDetail>().ToTable(tb => tb.UseSqlOutputClause(false));
+        modelBuilder.Entity<PurchaseOrder>().ToTable(tb => tb.UseSqlOutputClause(false));
+        modelBuilder.Entity<PurchaseOrderDetail>().ToTable(tb => tb.UseSqlOutputClause(false));
+        modelBuilder.Entity<Inventory>().ToTable(tb => tb.UseSqlOutputClause(false));
+
         // Configure unique constraint for Inventory (warehouseId, materialId)
         modelBuilder.Entity<Inventory>()
             .HasIndex(i => new { i.WarehouseId, i.MaterialId })
@@ -73,6 +82,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .WithMany()
             .HasForeignKey(scd => scd.WarehouseId)
             .HasConstraintName("FK_SCD_Warehouse");
+
+        // Configure computed column for StockCheckDetail.Difference
+        modelBuilder.Entity<StockCheckDetail>()
+            .Property(scd => scd.Difference)
+            .HasComputedColumnSql("[ActualQuantity] - [SystemQuantity]")
+            .ValueGeneratedOnAddOrUpdate();
 
         // Configure foreign key for StockCheckTeam.StockCheckId
         modelBuilder.Entity<StockCheckTeam>()

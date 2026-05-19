@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using WarehouseAPI.Data;
+using WarehouseAPI.DTOs;
 using WarehouseAPI.DTOs.MaterialDTOs;
 using WarehouseAPI.Models;
 
@@ -18,10 +19,24 @@ namespace WarehouseAPI.Repository
     {
         public async Task<MaterialResponse> AddMaterialAsync(CreateMaterialRequest material)
         {
-            // Validate SupplierId exists
-            var supplierExists = await context.Suppliers.AnyAsync(s => s.Id == material.SupplierId);
-            if (!supplierExists)
-                throw new InvalidOperationException($"Nhà cung cấp có ID {material.SupplierId} không tồn tại.");
+            if (!CategoryMapping.IsValidCategory(material.CategoryId))
+                throw new InvalidOperationException("Loại vật tư không hợp lệ.");
+
+            if (!UnitMapping.IsValidUnit(material.UnitId))
+                throw new InvalidOperationException("Đơn vị tính không hợp lệ.");
+
+            if (!CategoryUnitRule.IsValidUnit(material.CategoryId, material.UnitId))
+                throw new InvalidOperationException("Đơn vị không hợp lệ với loại vật tư.");
+
+            // Validate SupplierId exists (only when a supplier is specified)
+            if (material.SupplierId > 0)
+            {
+                var supplierExists = await context.Suppliers.AnyAsync(s => s.Id == material.SupplierId);
+                if (!supplierExists)
+                    throw new InvalidOperationException($"Nhà cung cấp có ID {material.SupplierId} không tồn tại.");
+            }
+
+            var itemType = NormalizeItemType(material.ItemType);
 
             var newMaterial = new Material
             {
@@ -30,7 +45,7 @@ namespace WarehouseAPI.Repository
                 CategoryId = material.CategoryId,
                 UnitId = material.UnitId,
                 SupplierId = material.SupplierId,
-                StockQuantity = material.StockQuantity,
+                ItemType = itemType,
                 Note = material.Note,
                 Status = material.Status,
                 CreatedTime = material.CreatedTime
@@ -38,6 +53,22 @@ namespace WarehouseAPI.Repository
 
             context.Materials.Add(newMaterial);
             await context.SaveChangesAsync();
+
+            // Create default inventory rows with Quantity = 0 for all existing warehouses
+            var warehouses = await context.Warehouse.Select(w => w.Id).ToListAsync();
+            if (warehouses.Count > 0)
+            {
+                var defaultInventories = warehouses.Select(warehouseId => new Inventory
+                {
+                    WarehouseId = warehouseId,
+                    MaterialId = newMaterial.Id,
+                    Quantity = 0,
+                    UpdatedDate = DateTime.Now
+                });
+
+                context.Inventory.AddRange(defaultInventories);
+                await context.SaveChangesAsync();
+            }
 
             return new MaterialResponse
             {
@@ -47,7 +78,7 @@ namespace WarehouseAPI.Repository
                 CategoryId = newMaterial.CategoryId,
                 UnitId = newMaterial.UnitId,
                 SupplierId = newMaterial.SupplierId,
-                StockQuantity = newMaterial.StockQuantity,
+                ItemType = newMaterial.ItemType,
                 Note = newMaterial.Note,
                 Status = newMaterial.Status,
                 CreatedTime = newMaterial.CreatedTime
@@ -86,7 +117,7 @@ namespace WarehouseAPI.Repository
                     CategoryId = m.CategoryId,
                     UnitId = m.UnitId,
                     SupplierId = m.SupplierId,
-                    StockQuantity = m.StockQuantity,
+                    ItemType = m.ItemType,
                     Note = m.Note,
                     Status = m.Status,
                     CreatedTime = m.CreatedTime,
@@ -106,7 +137,7 @@ namespace WarehouseAPI.Repository
                     CategoryId = m.CategoryId,
                     UnitId = m.UnitId,
                     SupplierId = m.SupplierId,
-                    StockQuantity = m.StockQuantity,
+                    ItemType = m.ItemType,
                     Note = m.Note,
                     Status = m.Status,
                     CreatedTime = m.CreatedTime,
@@ -122,23 +153,55 @@ namespace WarehouseAPI.Repository
             if (existingMaterial is null)
                 return false;
 
-            // Validate SupplierId exists
-            var supplierExists = await context.Suppliers.AnyAsync(s => s.Id == material.SupplierId);
-            if (!supplierExists)
-                throw new InvalidOperationException($"Supplier with ID {material.SupplierId} does not exist.");
+            if (!CategoryMapping.IsValidCategory(material.CategoryId))
+                throw new InvalidOperationException("Loại vật tư không hợp lệ.");
+
+            if (!UnitMapping.IsValidUnit(material.UnitId))
+                throw new InvalidOperationException("Đơn vị tính không hợp lệ.");
+
+            if (!CategoryUnitRule.IsValidUnit(material.CategoryId, material.UnitId))
+                throw new InvalidOperationException("Đơn vị không hợp lệ với loại vật tư.");
+
+            // Validate SupplierId exists (only when a supplier is specified)
+            if (material.SupplierId > 0)
+            {
+                var supplierExists = await context.Suppliers.AnyAsync(s => s.Id == material.SupplierId);
+                if (!supplierExists)
+                    throw new InvalidOperationException($"Nhà cung cấp có ID {material.SupplierId} không tồn tại.");
+            }
 
             existingMaterial.Code = material.Code;
             existingMaterial.Name = material.Name;
             existingMaterial.CategoryId = material.CategoryId;
             existingMaterial.UnitId = material.UnitId;
             existingMaterial.SupplierId = material.SupplierId;
-            existingMaterial.StockQuantity = material.StockQuantity;
+            existingMaterial.ItemType = NormalizeItemType(material.ItemType);
             existingMaterial.Note = material.Note;
             existingMaterial.Status = material.Status;
             existingMaterial.CreatedTime = material.CreatedTime;
 
             await context.SaveChangesAsync();
             return true;
+        }
+
+        private static string NormalizeItemType(string? itemType)
+        {
+            if (string.IsNullOrWhiteSpace(itemType))
+                return "Nguyên liệu";
+
+            var value = itemType.Trim().ToLowerInvariant();
+
+            // Accept both English (frontend) and Vietnamese values
+            if (value is "material" or "nguyen lieu" or "nguyên liệu")
+                return "Nguyên liệu";
+
+            if (value is "asset" or "tai san" or "tài sản")
+                return "Tài sản";
+
+            if (value is "goods" or "hang hoa" or "hàng hóa" or "product" or "products")
+                return "Hàng hóa";
+
+            throw new InvalidOperationException($"Loại vật tư không hợp lệ: {itemType}");
         }
     }
 }

@@ -36,6 +36,15 @@ namespace WarehouseAPI.Repository
             // Validate ImportReceiptDetails materials exist
             if (importReceipt.ImportReceiptDetails?.Any() == true)
             {
+                var duplicateMaterialIds = importReceipt.ImportReceiptDetails
+                    .GroupBy(d => d.MaterialId)
+                    .Where(g => g.Count() > 1)
+                    .Select(g => g.Key)
+                    .ToList();
+
+                if (duplicateMaterialIds.Any())
+                    throw new InvalidOperationException("Chi tiết phiếu nhập không được trùng vật liệu.");
+
                 var materialIds = importReceipt.ImportReceiptDetails.Select(d => d.MaterialId).Distinct();
                 var existingMaterials = await context.Materials.Where(m => materialIds.Contains(m.Id)).Select(m => m.Id).ToListAsync();
 
@@ -45,6 +54,8 @@ namespace WarehouseAPI.Repository
                         throw new InvalidOperationException($"Vật liệu có ID {materialId} không tồn tại.");
                 }
             }
+
+            var normalizedStatus = NormalizeImportStatus(importReceipt.Status);
 
             var newImportReceipt = new ImportReceipt
             {
@@ -56,7 +67,7 @@ namespace WarehouseAPI.Repository
                 SupplierInvoiceNo = importReceipt.SupplierInvoiceNo,
                 DocumentNo = importReceipt.DocumentNo,
                 TotalAmount = 0, // Will be calculated from details
-                Status = importReceipt.Status,
+                Status = normalizedStatus,
                 CreatedBy = importReceipt.CreatedBy,
                 ApprovedBy = importReceipt.ApprovedBy,
                 ApprovedAt = importReceipt.ApprovedAt,
@@ -262,6 +273,15 @@ namespace WarehouseAPI.Repository
             // Validate ImportReceiptDetails materials exist
             if (importReceipt.ImportReceiptDetails?.Any() == true)
             {
+                var duplicateMaterialIds = importReceipt.ImportReceiptDetails
+                    .GroupBy(d => d.MaterialId)
+                    .Where(g => g.Count() > 1)
+                    .Select(g => g.Key)
+                    .ToList();
+
+                if (duplicateMaterialIds.Any())
+                    throw new InvalidOperationException("Chi tiết phiếu nhập không được trùng vật liệu.");
+
                 var materialIds = importReceipt.ImportReceiptDetails.Select(d => d.MaterialId).Distinct();
                 var existingMaterials = await context.Materials.Where(m => materialIds.Contains(m.Id)).Select(m => m.Id).ToListAsync();
 
@@ -280,12 +300,18 @@ namespace WarehouseAPI.Repository
             existingImportReceipt.SupplierInvoiceNo = importReceipt.SupplierInvoiceNo;
             existingImportReceipt.DocumentNo = importReceipt.DocumentNo;
             existingImportReceipt.TotalAmount = importReceipt.TotalAmount;
-            existingImportReceipt.Status = importReceipt.Status;
-            existingImportReceipt.CreatedBy = importReceipt.CreatedBy;
-            existingImportReceipt.ApprovedBy = importReceipt.ApprovedBy;
-            existingImportReceipt.ApprovedAt = importReceipt.ApprovedAt;
+            existingImportReceipt.Status = NormalizeImportStatus(importReceipt.Status);
+            if (!string.IsNullOrEmpty(importReceipt.CreatedBy))
+                existingImportReceipt.CreatedBy = importReceipt.CreatedBy;
+            if (!string.IsNullOrEmpty(importReceipt.ApprovedBy))
+                existingImportReceipt.ApprovedBy = importReceipt.ApprovedBy;
+            if (importReceipt.ApprovedAt.HasValue)
+                existingImportReceipt.ApprovedAt = importReceipt.ApprovedAt;
             existingImportReceipt.Note = importReceipt.Note;
-            existingImportReceipt.CreatedAt = importReceipt.CreatedAt;
+            if (importReceipt.CreatedAt.HasValue && importReceipt.CreatedAt.Value > DateTime.MinValue)
+            {
+                existingImportReceipt.CreatedAt = importReceipt.CreatedAt.Value;
+            }
 
             // Remove old ImportReceiptDetails
             if (existingImportReceipt.ImportReceiptDetails?.Any() == true)
@@ -312,6 +338,47 @@ namespace WarehouseAPI.Repository
 
             await context.SaveChangesAsync();
             return true;
+        }
+
+        private static string NormalizeImportStatus(string? status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+                throw new InvalidOperationException("Trạng thái phiếu nhập là bắt buộc.");
+
+            var value = status.Trim();
+
+            if (value.Equals("Đã xác nhận", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Approved", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Đã duyệt", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Hoàn thành", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Đã xác nhận";
+            }
+
+            if (value.Equals("Đã hủy", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Cancelled", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Cancel", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Hủy", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Bị hủy", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Đã hủy";
+            }
+
+            if (value.Equals("Chờ xác nhận", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Pending", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Chờ duyệt", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Chờ xác nhận";
+            }
+
+            if (value.Equals("Đang soạn thảo", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Draft", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Nháp", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Đang soạn thảo";
+            }
+
+            throw new InvalidOperationException($"Trạng thái phiếu nhập không hợp lệ: {status}");
         }
     }
 }

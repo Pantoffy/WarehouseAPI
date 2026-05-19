@@ -12,7 +12,6 @@ namespace WarehouseAPI.Repository
         Task<InventoryResponse> AddInventoryAsync(CreateInventoryRequest inventory);
         Task<bool> UpdateInventoryByIdAsync(int id, UpdateInventoryRequest inventory);
         Task<bool> DeleteInventoryByIdAsync(int id);
-        Task SyncMaterialStockQuantityAsync(int materialId);
     }
 
     public class InventoryRepository(AppDbContext context) : IInventoryRepository
@@ -46,9 +45,6 @@ namespace WarehouseAPI.Repository
             context.Inventory.Add(newInventory);
             await context.SaveChangesAsync();
 
-            // Sync Material StockQuantity
-            await SyncMaterialStockQuantityAsync(newInventory.MaterialId);
-
             return new InventoryResponse
             {
                 Id = newInventory.Id,
@@ -65,12 +61,8 @@ namespace WarehouseAPI.Repository
             if (inventory is null)
                 return false;
 
-            var materialId = inventory.MaterialId;
             context.Inventory.Remove(inventory);
             await context.SaveChangesAsync();
-
-            // Sync Material StockQuantity
-            await SyncMaterialStockQuantityAsync(materialId);
 
             return true;
         }
@@ -134,7 +126,6 @@ namespace WarehouseAPI.Repository
             if (duplicateExists)
                 throw new InvalidOperationException($"Inventory already exists for Warehouse ID {inventory.WarehouseId} and Material ID {inventory.MaterialId}.");
 
-            var previousMaterialId = existingInventory.MaterialId;
             existingInventory.WarehouseId = inventory.WarehouseId;
             existingInventory.MaterialId = inventory.MaterialId;
             existingInventory.Quantity = inventory.Quantity;
@@ -142,29 +133,7 @@ namespace WarehouseAPI.Repository
 
             await context.SaveChangesAsync();
 
-            // Sync Material StockQuantity - nếu Material thay đổi, sync cả 2
-            if (previousMaterialId != inventory.MaterialId)
-            {
-                await SyncMaterialStockQuantityAsync(previousMaterialId);
-            }
-            await SyncMaterialStockQuantityAsync(inventory.MaterialId);
-
             return true;
-        }
-
-        public async Task SyncMaterialStockQuantityAsync(int materialId)
-        {
-            var material = await context.Materials.FindAsync(materialId);
-            if (material is null)
-                return;
-
-            // Tính tổng số lượng từ tất cả kho
-            var totalQuantity = await context.Inventory
-                .Where(i => i.MaterialId == materialId)
-                .SumAsync(i => i.Quantity);
-
-            material.StockQuantity = totalQuantity;
-            await context.SaveChangesAsync();
         }
     }
 }

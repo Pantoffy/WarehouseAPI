@@ -15,7 +15,7 @@ namespace WarehouseAPI.DTOs.MaterialDTOs
         public int UnitId { get; set; }
         public int SupplierId { get; set; }
 
-        public decimal StockQuantity { get; set; } = 0;
+        public string ItemType { get; set; } = "Nguyên liệu";
 
         public string? Note { get; set; }
         public string? Status { get; set; }

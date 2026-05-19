@@ -47,7 +47,7 @@ namespace WarehouseAPI.Repository
 
         public async Task<StockCheck> UpdateAsync(StockCheck stockCheck)
         {
-            _context.StockCheck.Update(stockCheck);
+            _context.Entry(stockCheck).State = EntityState.Modified;
             await _context.SaveChangesAsync();
             return stockCheck;
         }

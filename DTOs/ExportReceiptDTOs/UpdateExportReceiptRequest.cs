@@ -38,7 +38,7 @@ namespace WarehouseAPI.DTOs.ExportReceiptDTOs
         public DateTime? ApprovedAt { get; set; }
 
         public string? Note { get; set; }
-        public DateTime CreatedAt { get; set; }
+        public DateTime? CreatedAt { get; set; }
 
         public UpdateExportReceiptDetailRequest[]? ExportReceiptDetails { get; set; }
     }

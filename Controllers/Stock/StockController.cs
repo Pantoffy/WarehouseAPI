@@ -1,22 +1,31 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using WarehouseAPI.DTOs.StockDTOs;
 using WarehouseAPI.Services.Stock;
+using WarehouseAPI.Services.Auth;
 
 namespace WarehouseAPI.Controllers.Stock
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class StockController : ControllerBase
     {
         private readonly IStockService _service;
         private readonly IStockDetailService _detailService;
         private readonly IStockTeamService _teamService;
+        private readonly IUserService _userService;
 
-        public StockController(IStockService service, IStockDetailService detailService, IStockTeamService teamService)
+        public StockController(
+            IStockService service,
+            IStockDetailService detailService,
+            IStockTeamService teamService,
+            IUserService userService)
         {
             _service = service;
             _detailService = detailService;
             _teamService = teamService;
+            _userService = userService;
         }
 
         [Route(StockRouter.GetAllStocks), HttpGet]
@@ -43,12 +52,18 @@ namespace WarehouseAPI.Controllers.Stock
 
             try
             {
+                // Auto-fill createdBy from JWT token
+                request.CreatedBy = _userService.GetUsername(User);
+
                 var result = await _service.CreateAsync(request);
                 return CreatedAtAction(nameof(Get), new { id = result.Id }, result);
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                var inner = ex.InnerException?.InnerException?.Message
+                            ?? ex.InnerException?.Message
+                            ?? ex.Message;
+                return BadRequest(new { message = inner });
             }
         }
 
@@ -69,11 +84,15 @@ namespace WarehouseAPI.Controllers.Stock
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                var inner = ex.InnerException?.InnerException?.Message
+                            ?? ex.InnerException?.Message
+                            ?? ex.Message;
+                return BadRequest(new { message = inner });
             }
         }
 
         [Route(StockRouter.DeleteStock), HttpDelete("{id}")]
+        [Authorize(Roles = "Quản lý kho")]
         public async Task<ActionResult> Delete(int id)
         {
             var result = await _service.DeleteAsync(id);
